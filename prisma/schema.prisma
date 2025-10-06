@@ -1,0 +1,220 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+//
+// ==========================
+// AUTENTICACIÓN
+// ==========================
+model Role {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String?
+  users       User[]
+}
+
+model User {
+  id         Int      @id @default(autoincrement())
+  first_name String
+  last_name  String
+  email      String   @unique
+  password   String
+  status     Boolean  @default(true)
+  role_id    Int?
+  role       Role?    @relation(fields: [role_id], references: [id])
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  Teacher Teacher?
+  Student Student?
+  Logs    Log[]
+
+  // 👇 Relación inversa con PasswordResetToken
+  resetTokens PasswordResetToken[]
+}
+
+//
+// ==========================
+// GESTIÓN INSTITUCIONAL
+// ==========================
+model Plan {
+  id          Int         @id @default(autoincrement())
+  title       String
+  description String?
+  start_year  Int
+  end_year    Int
+  status      Boolean     @default(true)
+  objectives  Objective[]
+}
+
+model Objective {
+  id          Int          @id @default(autoincrement())
+  plan_id     Int
+  title       String
+  description String?
+  plan        Plan         @relation(fields: [plan_id], references: [id])
+  initiatives Initiative[]
+}
+
+model Initiative {
+  id             Int       @id @default(autoincrement())
+  objective_id   Int
+  title          String
+  indicator      String?
+  goal_value     Float?
+  achieved_value Float?
+  objective      Objective @relation(fields: [objective_id], references: [id])
+}
+
+//
+// ==========================
+// CATÁLOGOS ACADÉMICOS
+// ==========================
+model Faculty {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  programs    Program[]
+}
+
+model Program {
+  id             Int          @id @default(autoincrement())
+  faculty_id     Int
+  name           String
+  description    String?
+  duration_years Int
+  faculty        Faculty      @relation(fields: [faculty_id], references: [id])
+  courses        Course[]
+  enrollments    Enrollment[]
+}
+
+model Course {
+  id                Int                @id @default(autoincrement())
+  program_id        Int
+  code              String             @unique
+  name              String
+  credits           Int
+  semester          Int
+  program           Program            @relation(fields: [program_id], references: [id])
+  assignments       Assignment[]
+  enrollmentCourses EnrollmentCourse[]
+}
+
+//
+// ==========================
+// GESTIÓN ACADÉMICA
+// ==========================
+model Teacher {
+  id             Int       @id @default(autoincrement())
+  user_id        Int       @unique
+  specialization String?
+  hire_date      DateTime?
+
+  user        User         @relation(fields: [user_id], references: [id])
+  assignments Assignment[]
+}
+
+model Student {
+  id              Int     @id @default(autoincrement())
+  user_id         Int     @unique
+  enrollment_year Int?
+  status          Boolean @default(true)
+
+  user        User         @relation(fields: [user_id], references: [id])
+  enrollments Enrollment[]
+  grades      Grade[]
+}
+
+model Assignment {
+  id         Int @id @default(autoincrement())
+  course_id  Int
+  teacher_id Int
+  semester   Int
+  year       Int
+
+  course  Course  @relation(fields: [course_id], references: [id])
+  teacher Teacher @relation(fields: [teacher_id], references: [id])
+  grades  Grade[]
+}
+
+model Grade {
+  id            Int     @id @default(autoincrement())
+  student_id    Int
+  assignment_id Int
+  grade         Float?
+  observation   String?
+
+  student    Student    @relation(fields: [student_id], references: [id])
+  assignment Assignment @relation(fields: [assignment_id], references: [id])
+}
+
+//
+// ==========================
+// MATRÍCULA
+// ==========================
+model AdmissionProcess {
+  id          Int       @id @default(autoincrement())
+  year        Int
+  description String?
+  start_date  DateTime?
+  end_date    DateTime?
+
+  enrollments Enrollment[]
+}
+
+model Enrollment {
+  id                   Int      @id @default(autoincrement())
+  student_id           Int
+  program_id           Int
+  admission_process_id Int
+  status               String   @default("preinscrito")
+  enrolled_at          DateTime @default(now())
+
+  student           Student            @relation(fields: [student_id], references: [id])
+  program           Program            @relation(fields: [program_id], references: [id])
+  admissionProcess  AdmissionProcess   @relation(fields: [admission_process_id], references: [id])
+  enrollmentCourses EnrollmentCourse[]
+}
+
+model EnrollmentCourse {
+  id            Int    @id @default(autoincrement())
+  enrollment_id Int
+  course_id     Int
+  status        String @default("activo")
+
+  enrollment Enrollment @relation(fields: [enrollment_id], references: [id])
+  course     Course     @relation(fields: [course_id], references: [id])
+}
+
+//
+// ==========================
+// LOGS Y AUDITORÍA
+// ==========================
+model Log {
+  id          Int      @id @default(autoincrement())
+  user_id     Int
+  action      String
+  description String?
+  created_at  DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id])
+}
+
+//
+// ==========================
+// RECUPERACIÓN DE CONTRASEÑA
+// ==========================
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
