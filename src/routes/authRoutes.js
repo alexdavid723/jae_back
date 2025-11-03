@@ -1,29 +1,39 @@
 import express from "express";
 import {
-  register,
-  login,
-  forgotPassword,
-  resetPassword,
-  getAllUsers,
-  deleteUser,
-  updateUser,
+    register,
+    login,
+    forgotPassword,
+    resetPassword,
+    getAllUsers,
+    deleteUser,
+    updateUser,
 } from "../controllers/authController.js";
-import authMiddleware from "../middlewares/auth.js";
-import isSuperAdmin from "../middlewares/isSuperAdmin.js";
+// Importamos el middleware principal y la función de autorización por rol
+import authMiddleware, { authorizeRole } from "../middlewares/auth.js"; 
+// 🚨 NO ES NECESARIO importar isSuperAdmin, ya que lo reemplazamos por authorizeRole
 
 const router = express.Router();
 
-// Solo administradores pueden registrar usuarios
-router.post("/register", authMiddleware, isSuperAdmin, register);
+// Define los roles permitidos para las acciones de gestión de personal
+// Permite a Superadmin (gestión total) y Admin (gestión institucional)
+const personnelAccess = [authMiddleware, authorizeRole(['superadmin', 'admin'])];
 
-// 🔹 Listar todos los usuarios (solo para administradores)
-router.get("/users", authMiddleware, isSuperAdmin, getAllUsers);
 
-// 🔹 Editar usuario por id (solo para administradores)
-router.put("/users/:id", authMiddleware, isSuperAdmin, updateUser);
+// 1. REGISTRAR USUARIOS (Docentes, Estudiantes, Admins)
+// Endpoint: POST /api/auth/register
+// 💡 Permite que el Admin cree Docentes/Estudiantes (controlado en el controller).
+router.post("/register", personnelAccess, register); 
 
-// 🔹 Eliminar usuario por id (solo para administradores)
-router.delete("/users/:id", authMiddleware, isSuperAdmin, deleteUser);
+// 2. 🔹 Listar todos los usuarios (solo Superadmin para la ruta genérica)
+// Si el Admin necesita ver su personal, crearía un endpoint /api/users/teachers-students
+router.get("/users", authMiddleware, authorizeRole(['superadmin']), getAllUsers); 
+
+// 3. 🔹 Editar usuario por id 
+router.put("/users/:id", personnelAccess, updateUser);
+
+// 4. 🔹 Eliminar usuario por id 
+router.delete("/users/:id", personnelAccess, deleteUser);
+
 
 // Login y recuperación de contraseña (sin restricción de rol)
 router.post("/login", login);

@@ -9,7 +9,7 @@ datasource db {
 
 //
 // ==========================
-// AUTENTICACIÓN
+// AUTENTICACIÓN / ROLES
 // ==========================
 model Role {
   id          Int     @id @default(autoincrement())
@@ -30,76 +30,147 @@ model User {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
-  Teacher Teacher?
-  Student Student?
-  Logs    Log[]
+  Teacher           Teacher?
+  Student           Student?
+  institutionAdmins InstitutionAdmin[] // ✅ Cambiado
 
-  // 👇 Relación inversa con PasswordResetToken
+  Logs        Log[]
   resetTokens PasswordResetToken[]
 }
 
 //
 // ==========================
-// GESTIÓN INSTITUCIONAL
+// INSTITUCIÓN
+// ==========================
+model Institution {
+  id      Int     @id @default(autoincrement())
+  name    String
+  code    String  @unique
+  address String?
+  email   String?
+  phone   String?
+  status  Boolean @default(true)
+
+  // Relaciones académicas
+  teachers         Teacher[]
+  students         Student[]
+  plans            Plan[]
+  academicPeriods  AcademicPeriod[] // La institución define los periodos
+  enrollmentSheets EnrollmentSheet[]
+  faculties        Faculty[]
+  programs         Program[] // ✅ NUEVA RELACIÓN: Indica que la institución posee Programas
+  // Administradores de la institución (tabla de unión)
+  admins           InstitutionAdmin[]
+}
+
+//
+// ==========================
+// INSTITUTION ADMIN (vincula usuarios con rol admin a una institución)
+// ==========================
+model InstitutionAdmin {
+  id             Int      @id @default(autoincrement())
+  user_id        Int
+  institution_id Int
+  assigned_at    DateTime @default(now())
+
+  user        User        @relation(fields: [user_id], references: [id])
+  institution Institution @relation(fields: [institution_id], references: [id])
+
+  @@unique([user_id, institution_id])
+}
+
+//
+// ==========================
+// GESTIÓN DE PERIODOS ACADÉMICOS
+// ==========================
+// ==========================
+// GESTIÓN DE PERIODOS ACADÉMICOS
+// ==========================
+model AcademicPeriod {
+  id             Int      @id @default(autoincrement())
+  institution_id Int
+  year           Int
+  name           String // Ej: "2025 - I Semestre"
+  modality       String // NUEVO CAMPO: "Bimestre", "Semestre", "Módulo", etc.
+  start_date     DateTime
+  end_date       DateTime
+  is_active      Boolean  @default(true)
+
+  institution Institution @relation(fields: [institution_id], references: [id])
+
+  assignments      Assignment[]
+  admissions       AdmissionProcess[]
+  enrollmentSheets EnrollmentSheet[]
+
+  @@unique([institution_id, year, name])
+}
+
+//
+// ==========================
+// PLAN DE ESTUDIOS (VERSIONADO CURRICULAR)
 // ==========================
 model Plan {
-  id          Int         @id @default(autoincrement())
-  title       String
-  description String?
-  start_year  Int
-  end_year    Int
-  status      Boolean     @default(true)
-  objectives  Objective[]
-}
+  id             Int         @id @default(autoincrement())
+  title          String // Ej: "Plan Curricular 2024 (Vigente)"
+  description    String?
+  start_year     Int
+  end_year       Int
+  status         Boolean     @default(true)
+  institution_id Int
+  institution    Institution @relation(fields: [institution_id], references: [id])
 
-model Objective {
-  id          Int          @id @default(autoincrement())
-  plan_id     Int
-  title       String
-  description String?
-  plan        Plan         @relation(fields: [plan_id], references: [id])
-  initiatives Initiative[]
-}
-
-model Initiative {
-  id             Int       @id @default(autoincrement())
-  objective_id   Int
-  title          String
-  indicator      String?
-  goal_value     Float?
-  achieved_value Float?
-  objective      Objective @relation(fields: [objective_id], references: [id])
+  // Relación con Programas (versiones de carrera)
+  programs Program[]
 }
 
 //
 // ==========================
 // CATÁLOGOS ACADÉMICOS
 // ==========================
+
+// 🚨 SCHEMA CORREGIDO (AÑADIR VÍNCULO LOCAL)
 model Faculty {
-  id          Int       @id @default(autoincrement())
+  id          Int     @id @default(autoincrement())
   name        String
   description String?
-  programs    Program[]
+
+  // 🎯 VÍNCULO CRUCIAL A LA INSTITUCIÓN
+  institution_id Int
+  institution    Institution @relation(fields: [institution_id], references: [id])
+
+  programs Program[]
+
+  // El nombre debe ser único SÓLO dentro de la institución
+  @@unique([institution_id, name])
 }
 
 model Program {
-  id             Int          @id @default(autoincrement())
+  id             Int     @id @default(autoincrement())
+  institution_id Int
   faculty_id     Int
+  plan_id        Int
   name           String
   description    String?
-  duration_years Int
-  faculty        Faculty      @relation(fields: [faculty_id], references: [id])
-  courses        Course[]
-  enrollments    Enrollment[]
+  duration_months         Int?                // <-- AÑADIDO: Meses exactos
+  duration_years          Int                 // Años calculados (requerido previamente)
+  is_active               Boolean             @default(true) // <-- AÑADIDO: Estado de actividad
+
+  faculty          Faculty           @relation(fields: [faculty_id], references: [id])
+  institution      Institution       @relation(fields: [institution_id], references: [id]) // <-- NUEVA RELACIÓN
+  plan             Plan              @relation(fields: [plan_id], references: [id])
+  courses          Course[]
+  enrollments      Enrollment[]
+  enrollmentSheets EnrollmentSheet[]
 }
 
 model Course {
-  id                Int                @id @default(autoincrement())
-  program_id        Int
-  code              String             @unique
-  name              String
-  credits           Int
-  semester          Int
+  id         Int    @id @default(autoincrement())
+  program_id Int
+  code       String @unique
+  name       String
+  credits    Int
+  semester   Int // Semestre en que se imparte según el currículo
+
   program           Program            @relation(fields: [program_id], references: [id])
   assignments       Assignment[]
   enrollmentCourses EnrollmentCourse[]
@@ -112,34 +183,42 @@ model Course {
 model Teacher {
   id             Int       @id @default(autoincrement())
   user_id        Int       @unique
+  institution_id Int
   specialization String?
   hire_date      DateTime?
 
   user        User         @relation(fields: [user_id], references: [id])
+  institution Institution  @relation(fields: [institution_id], references: [id])
   assignments Assignment[]
 }
 
 model Student {
   id              Int     @id @default(autoincrement())
   user_id         Int     @unique
+  institution_id  Int
   enrollment_year Int?
   status          Boolean @default(true)
 
   user        User         @relation(fields: [user_id], references: [id])
+  institution Institution  @relation(fields: [institution_id], references: [id])
   enrollments Enrollment[]
   grades      Grade[]
 }
 
 model Assignment {
-  id         Int @id @default(autoincrement())
-  course_id  Int
-  teacher_id Int
-  semester   Int
-  year       Int
+  id                 Int @id @default(autoincrement())
+  course_id          Int
+  teacher_id         Int
+  academic_period_id Int
+  //CAMPO AÑADIDO: Para definir el turno del grupo (Mañana, Tarde, Noche)
+  shift               String
+  course         Course         @relation(fields: [course_id], references: [id])
+  teacher        Teacher        @relation(fields: [teacher_id], references: [id])
+  academicPeriod AcademicPeriod @relation(fields: [academic_period_id], references: [id])
+  grades         Grade[]
 
-  course  Course  @relation(fields: [course_id], references: [id])
-  teacher Teacher @relation(fields: [teacher_id], references: [id])
-  grades  Grade[]
+  // Un curso solo se asigna a un profesor por periodo
+  @@unique([course_id, academic_period_id, shift])
 }
 
 model Grade {
@@ -151,6 +230,8 @@ model Grade {
 
   student    Student    @relation(fields: [student_id], references: [id])
   assignment Assignment @relation(fields: [assignment_id], references: [id])
+
+  @@unique([student_id, assignment_id])
 }
 
 //
@@ -158,13 +239,16 @@ model Grade {
 // MATRÍCULA
 // ==========================
 model AdmissionProcess {
-  id          Int       @id @default(autoincrement())
-  year        Int
-  description String?
-  start_date  DateTime?
-  end_date    DateTime?
+  id                 Int       @id @default(autoincrement())
+  academic_period_id Int
+  description        String?
+  start_date         DateTime?
+  end_date           DateTime?
 
-  enrollments Enrollment[]
+  academicPeriod AcademicPeriod @relation(fields: [academic_period_id], references: [id])
+
+  enrollments      Enrollment[]
+  enrollmentSheets EnrollmentSheet[]
 }
 
 model Enrollment {
@@ -175,10 +259,11 @@ model Enrollment {
   status               String   @default("preinscrito")
   enrolled_at          DateTime @default(now())
 
-  student           Student            @relation(fields: [student_id], references: [id])
-  program           Program            @relation(fields: [program_id], references: [id])
-  admissionProcess  AdmissionProcess   @relation(fields: [admission_process_id], references: [id])
-  enrollmentCourses EnrollmentCourse[]
+  student             Student               @relation(fields: [student_id], references: [id])
+  program             Program               @relation(fields: [program_id], references: [id])
+  admissionProcess    AdmissionProcess      @relation(fields: [admission_process_id], references: [id])
+  enrollmentCourses   EnrollmentCourse[]
+  EnrollmentSheetItem EnrollmentSheetItem[]
 }
 
 model EnrollmentCourse {
@@ -189,6 +274,51 @@ model EnrollmentCourse {
 
   enrollment Enrollment @relation(fields: [enrollment_id], references: [id])
   course     Course     @relation(fields: [course_id], references: [id])
+
+  @@unique([enrollment_id, course_id])
+}
+
+//
+// ==========================
+// HOJA DE MATRÍCULA (Registro Histórico)
+// ==========================
+model EnrollmentSheet {
+  id                 Int @id @default(autoincrement())
+  institution_id     Int
+  program_id         Int
+  admission_id       Int
+  academic_period_id Int
+
+  // Campos para registro histórico inmutable
+  module_name  String
+  class_period String
+  shift        String
+  section      String
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  institution    Institution           @relation(fields: [institution_id], references: [id])
+  program        Program               @relation(fields: [program_id], references: [id])
+  admission      AdmissionProcess      @relation(fields: [admission_id], references: [id])
+  academicPeriod AcademicPeriod        @relation(fields: [academic_period_id], references: [id])
+  items          EnrollmentSheetItem[]
+}
+
+model EnrollmentSheetItem {
+  id                  Int @id @default(autoincrement())
+  enrollment_sheet_id Int
+  enrollment_id       Int
+
+  // Registro histórico inmutable de la "Hoja de Matrícula"
+  student_name String
+  sex          String
+  birth_date   DateTime
+  condition    String
+  units        Int
+  credits      Int
+
+  enrollmentSheet EnrollmentSheet @relation(fields: [enrollment_sheet_id], references: [id])
+  enrollment      Enrollment      @relation(fields: [enrollment_id], references: [id])
 }
 
 //
